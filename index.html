@@ -36,10 +36,11 @@
   .check { flex-direction: row; align-items: center; gap: 8px; font-size: 14px; color: var(--text); }
   .check input { width: auto; }
 
-  .pos { display: grid; grid-template-columns: 1fr 64px 84px 84px 84px 84px 32px; gap: 8px; align-items: end; margin-bottom: 8px; }
+  .pos { display: grid; grid-template-columns: 1fr 56px 76px 76px 76px 76px 80px 32px; gap: 8px; align-items: end; margin-bottom: 8px; }
   .pos .sum { text-align: right; padding-bottom: 8px; font-variant-numeric: tabular-nums; }
   .pos-head { font-size: 12px; color: var(--muted); }
-  .pos-head span:nth-child(6) { text-align: right; }
+  .pos-head span:nth-child(7) { text-align: right; }
+  @media (min-width: 601px) { main { max-width: 900px; } }
   .del { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 6px; height: 36px; cursor: pointer; }
   .del:hover { color: #c0392b; border-color: #c0392b; }
   @media (max-width: 600px) {
@@ -70,6 +71,7 @@
     <div class="grid">
       <label>Vor-/Nachbereitung (CHF/h)<input id="rateHour" type="number" step="0.5" min="0" value="60"></label>
       <label>Material (Rp./g)<input id="rateGram" type="number" step="1" min="0" value="10"></label>
+      <label>Maschinenzeit (CHF/h)<input id="rateMachine" type="number" step="0.5" min="0" value="2"></label>
       <label>Design (CHF/h)<input id="rateDesign" type="number" step="0.5" min="0" value="60"></label>
       <label>Pauschale / Einrichten (CHF)<input id="setup" type="number" step="1" min="0" value="0"></label>
       <label class="check"><input id="vat" type="checkbox"> inkl. MwSt 8.1 %</label>
@@ -78,7 +80,7 @@
 
   <section>
     <h2>Objekte</h2>
-    <div class="pos pos-head"><span>Bezeichnung</span><span>Anzahl</span><span>Gramm / Stk</span><span>Std. Vor/Nach</span><span>Std. Design</span><span>CHF</span><span></span></div>
+    <div class="pos pos-head"><span>Bezeichnung</span><span>Anzahl</span><span>Gramm / Stk</span><span>Std. Druck</span><span>Std. Vor/Nach</span><span>Std. Design</span><span>CHF</span><span></span></div>
     <div id="positions"></div>
     <button class="ghost" id="addPos" type="button">+ Objekt</button>
   </section>
@@ -122,7 +124,7 @@ function load() {
 function save() {
   try {
     localStorage.setItem(STORE, JSON.stringify({
-      rateHour: $('rateHour').value, rateGram: $('rateGram').value, rateDesign: $('rateDesign').value, setup: $('setup').value,
+      rateHour: $('rateHour').value, rateGram: $('rateGram').value, rateDesign: $('rateDesign').value, rateMachine: $('rateMachine').value, setup: $('setup').value,
       vat: $('vat').checked, valid: $('valid').value, sender: $('sender').value,
       counter: state.counter,
     }));
@@ -138,7 +140,8 @@ function addPosition(p = {}) {
     <input class="name" placeholder="Objekt" value="${p.name || ''}">
     <input class="qty" type="number" min="1" step="1" value="${p.qty || 1}" title="Anzahl">
     <input class="gram" type="number" min="0" step="1" value="${p.gram || ''}" placeholder="g" title="Gramm pro Stück">
-    <input class="hours" type="number" min="0" step="0.25" value="${p.hours || ''}" placeholder="h" title="Std. Vor-/Nachbereitung">
+    <input class="machine" type="number" min="0" step="0.25" value="${p.machine || ''}" placeholder="h" title="Std. Druck (Maschinenzeit)">
+    <input class="hours"type="number" min="0" step="0.25" value="${p.hours || ''}" placeholder="h" title="Std. Vor-/Nachbereitung">
     <input class="design" type="number" min="0" step="0.25" value="${p.design || ''}" placeholder="h" title="Std. Design">
     <div class="sum">0.00</div>
     <button class="del" type="button" title="Entfernen">×</button>`;
@@ -154,13 +157,15 @@ function compute() {
   const rateHour = num($('rateHour'));
   const rateGram = num($('rateGram')) / 100; // Rp -> CHF
   const rateDesign = num($('rateDesign'));
+  const rateMachine = num($('rateMachine'));
   const items = [...document.querySelectorAll('#positions .pos')].map(row => {
     const name = row.querySelector('.name').value.trim() || '3D-Modell';
     const qty = Math.max(1, Math.round(num(row.querySelector('.qty'))));
     const material = qty * num(row.querySelector('.gram')) * rateGram;
+    const machine = num(row.querySelector('.machine')) * rateMachine;
     const work = num(row.querySelector('.hours')) * rateHour;
     const design = num(row.querySelector('.design')) * rateDesign;
-    return { row, name, qty, material, work, design, total: material + work + design };
+    return { row, name, qty, material, machine, work, design, total: material + machine + work + design };
   });
   const setup = num($('setup'));
   const net = items.reduce((s, i) => s + i.total, 0) + setup;
@@ -174,6 +179,7 @@ function calc() {
   c.items.forEach(i => i.row.querySelector('.sum').textContent = fmt(i.total));
   const rows = [
     ['Material', fmt(c.items.reduce((s, i) => s + i.material, 0))],
+    ['Druck', fmt(c.items.reduce((s, i) => s + i.machine, 0))],
     ['Vor-/Nachbereitung', fmt(c.items.reduce((s, i) => s + i.work, 0))],
     ['Design', fmt(c.items.reduce((s, i) => s + i.design, 0))],
   ];
@@ -232,7 +238,7 @@ function makePdf() {
     doc.text(lines, L, y);
     y += lines.length * 5;
     doc.setFont('helvetica', 'normal');
-    [['Material', i.material], ['Vor-/Nachbereitung', i.work], ['Design', i.design]]
+    [['Material', i.material], ['Druck', i.machine], ['Vor-/Nachbereitung', i.work], ['Design', i.design]]
       .filter(([, v]) => v > 0)
       .forEach(([label, v]) => {
         doc.text(label, L + 4, y);
@@ -276,12 +282,12 @@ function makePdf() {
 
 // Init
 const s = load();
-['rateHour', 'rateGram', 'rateDesign', 'setup', 'valid', 'sender'].forEach(k => { if (s[k] != null) $(k).value = s[k]; });
+['rateHour', 'rateGram', 'rateDesign', 'rateMachine', 'setup', 'valid', 'sender'].forEach(k => { if (s[k] != null) $(k).value = s[k]; });
 if (s.vat) $('vat').checked = true;
 state.counter = s.counter || 1;
 $('number').value = offerNumber();
 $('date').valueAsDate = new Date();
-['rateHour', 'rateGram', 'rateDesign', 'setup', 'vat', 'valid', 'sender'].forEach(k => $(k).addEventListener('input', calc));
+['rateHour', 'rateGram', 'rateDesign', 'rateMachine', 'setup', 'vat', 'valid', 'sender'].forEach(k => $(k).addEventListener('input', calc));
 $('addPos').onclick = () => addPosition();
 $('pdf').onclick = makePdf;
 addPosition();
