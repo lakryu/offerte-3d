@@ -70,6 +70,7 @@
     <div class="grid">
       <label>Stundenansatz (CHF/h)<input id="rateHour" type="number" step="0.5" min="0" value="60"></label>
       <label>Material (Rp./g)<input id="rateGram" type="number" step="1" min="0" value="10"></label>
+      <label>Design (CHF/h)<input id="rateDesign" type="number" step="0.5" min="0" value="60"></label>
       <label>Pauschale / Einrichten (CHF)<input id="setup" type="number" step="1" min="0" value="0"></label>
       <label class="check"><input id="vat" type="checkbox"> inkl. MwSt 8.1 %</label>
     </div>
@@ -80,6 +81,14 @@
     <div class="pos pos-head"><span>Bezeichnung</span><span>Anzahl</span><span>Gramm / Stk</span><span>Std. total</span><span>CHF</span><span></span></div>
     <div id="positions"></div>
     <button class="ghost" id="addPos" type="button">+ Objekt</button>
+  </section>
+
+  <section>
+    <h2>Design / 3D-Modellierung</h2>
+    <div class="grid">
+      <label>Bezeichnung<input id="designName" value="Design / 3D-Modellierung"></label>
+      <label>Stunden<input id="designHours" type="number" min="0" step="0.25" placeholder="0 = keine Design-Position"></label>
+    </div>
   </section>
 
   <section>
@@ -121,7 +130,7 @@ function load() {
 function save() {
   try {
     localStorage.setItem(STORE, JSON.stringify({
-      rateHour: $('rateHour').value, rateGram: $('rateGram').value, setup: $('setup').value,
+      rateHour: $('rateHour').value, rateGram: $('rateGram').value, rateDesign: $('rateDesign').value, setup: $('setup').value,
       vat: $('vat').checked, valid: $('valid').value, sender: $('sender').value,
       counter: state.counter,
     }));
@@ -161,10 +170,13 @@ function compute() {
     return { row, name, qty, gram, hours, material, work, total: material + work };
   });
   const setup = num($('setup'));
-  const net = items.reduce((s, i) => s + i.total, 0) + setup;
+  const rateDesign = num($('rateDesign'));
+  const designHours = num($('designHours'));
+  const design = designHours * rateDesign;
+  const net = items.reduce((s, i) => s + i.total, 0) + design + setup;
   const vat = $('vat').checked ? net * 0.081 : 0;
   const total = round05(net + vat);
-  return { rateHour, rateGram, items, setup, net, vat, total };
+  return { rateHour, rateGram, rateDesign, designHours, design, items, setup, net, vat, total };
 }
 
 function calc() {
@@ -174,6 +186,7 @@ function calc() {
     ['Material', fmt(c.items.reduce((s, i) => s + i.material, 0))],
     ['Arbeit', fmt(c.items.reduce((s, i) => s + i.work, 0))],
   ];
+  if (c.design) rows.push(['Design', fmt(c.design)]);
   if (c.setup) rows.push(['Pauschale', fmt(c.setup)]);
   if (c.vat) rows.push(['MwSt 8.1 %', fmt(c.vat)]);
   $('totals').innerHTML = rows.map(([a, b]) => `<span>${a}</span><span class="r">${b}</span>`).join('')
@@ -236,6 +249,12 @@ function makePdf() {
     y += Math.max(1, lines.length) * 5 + 2;
     if (y > 250) { doc.addPage(); y = 25; }
   });
+  if (c.design) {
+    doc.text($('designName').value.trim() || 'Design', cols.name, y);
+    doc.text(String(c.designHours), cols.hours + 6, y, { align: 'right' });
+    doc.text(fmt(c.design), cols.total, y, { align: 'right' });
+    y += 7;
+  }
   if (c.setup) {
     doc.text('Pauschale / Einrichten', cols.name, y);
     doc.text(fmt(c.setup), cols.total, y, { align: 'right' });
@@ -260,7 +279,8 @@ function makePdf() {
   }
 
   doc.setFontSize(8).setTextColor(130);
-  doc.text(`Material ${fmt(c.rateGram * 100).replace(/\.00$/, '')} Rp./g · Arbeit ${fmt(c.rateHour)} CHF/h`, L, 285);
+  doc.text(`Material ${fmt(c.rateGram * 100).replace(/\.00$/, '')} Rp./g · Arbeit ${fmt(c.rateHour)} CHF/h`
+    + (c.design ? ` · Design ${fmt(c.rateDesign)} CHF/h` : ''), L, 285);
 
   doc.save(`Offerte_${$('number').value || 'ohne-nr'}.pdf`);
 
@@ -272,12 +292,12 @@ function makePdf() {
 
 // Init
 const s = load();
-['rateHour', 'rateGram', 'setup', 'valid', 'sender'].forEach(k => { if (s[k] != null) $(k).value = s[k]; });
+['rateHour', 'rateGram', 'rateDesign', 'setup', 'valid', 'sender'].forEach(k => { if (s[k] != null) $(k).value = s[k]; });
 if (s.vat) $('vat').checked = true;
 state.counter = s.counter || 1;
 $('number').value = offerNumber();
 $('date').valueAsDate = new Date();
-['rateHour', 'rateGram', 'setup', 'vat', 'valid', 'sender'].forEach(k => $(k).addEventListener('input', calc));
+['rateHour', 'rateGram', 'rateDesign', 'designHours', 'designName', 'setup', 'vat', 'valid', 'sender'].forEach(k => $(k).addEventListener('input', calc));
 $('addPos').onclick = () => addPosition();
 $('pdf').onclick = makePdf;
 addPosition();
